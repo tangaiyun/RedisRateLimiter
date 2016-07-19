@@ -6,7 +6,7 @@ support control level: Seconds, Minutes,  Hours,  Days
 
 usage:
 
-please set the configuration of redis,change the content fo redis.properties as your real environment
+please set the configuration of redis, change the content of redis.properties as your real environment.
 
 
 detail api usage:
