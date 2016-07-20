@@ -43,7 +43,8 @@ public class RedisRateLimiter {
 		return permitsPerUnit;
 	}
 
-	public void acquire(String keyPrefix) throws RateExceedException {
+	public boolean acquire(String keyPrefix){
+		boolean rtv = false;
 		if (jedisPool != null) {
 			Jedis jedis = null;
 			try {
@@ -52,24 +53,21 @@ public class RedisRateLimiter {
 					String keyName = getKeyName(jedis, keyPrefix);
 					String current = jedis.get(keyName);
 					if ((current != null) && (Integer.parseInt(current) >= permitsPerUnit)) {
-						throw new RateExceedException(keyPrefix, timeUnit, permitsPerUnit);
+						rtv = false;
 					} else {
-						// Transaction tx = jedis.multi();
-						// tx.incr(keyName);
-						// tx.expire(keyName, getExpire());
-						// tx.exec();
 						List<String> keys = new ArrayList<String>();
 						keys.add(keyName);
 						List<String> argvs = new ArrayList<String>();
 						argvs.add(getExpire() + "");
 						jedis.eval(LuaSecondsScript, keys, argvs);
+						rtv = true;
 					}
 				} else if (timeUnit == TimeUnit.MINUTES) {
-					doPeriod(jedis, keyPrefix, 60);
+					rtv = doPeriod(jedis, keyPrefix, 60);
 				} else if (timeUnit == TimeUnit.HOURS) {
-					doPeriod(jedis, keyPrefix, 3600);
+					rtv = doPeriod(jedis, keyPrefix, 3600);
 				} else if (timeUnit == TimeUnit.DAYS) {
-					doPeriod(jedis, keyPrefix, 3600*24);
+					rtv = doPeriod(jedis, keyPrefix, 3600*24);
 				}
 			} finally {
 				if (jedis != null) {
@@ -77,8 +75,9 @@ public class RedisRateLimiter {
 				}
 			}
 		}
+		return rtv;
 	}
-	private void doPeriod(Jedis jedis, String keyPrefix, int period) throws RateExceedException {
+	private boolean doPeriod(Jedis jedis, String keyPrefix, int period) {
 		String[] keyNames = getKeyNames(jedis, keyPrefix);
 		//返回2个，第1个是秒计数10位，第2个是微秒6位
 		List<String> jedisTime = jedis.time(); 
@@ -89,13 +88,9 @@ public class RedisRateLimiter {
 				+ jedis.zcount(keyNames[1], previousSecondIndex, currentSecondIndex);
 		
 		if(currentCount >= permitsPerUnit) {
-			throw new RateExceedException(keyPrefix, timeUnit, permitsPerUnit);
+			return false;
 		}
 		else {
-//			jedis.zadd(keyNames[1], Long.parseLong(currentSecondIndex), currentSecondIndex);
-//			if(jedis.zcount(keyNames[1], "-inf", "+inf") == 1) {
-//				jedis.expire(keyNames[1], getExpire());
-//			}
 			List<String> keys = new ArrayList<String>();
 			keys.add(keyNames[1]);
 			List<String> argvs = new ArrayList<String>();
@@ -104,6 +99,7 @@ public class RedisRateLimiter {
 			argvs.add(jedisTime.get(0)+jedisTime.get(1)+RandomStringUtils.randomAlphanumeric(4));
 			argvs.add(getExpire()+"");
 			jedis.eval(LuaPeriodScript, keys, argvs);
+			return true;
 		}
 	}
 	private String getKeyName(Jedis jedis, String keyPrefix) {
