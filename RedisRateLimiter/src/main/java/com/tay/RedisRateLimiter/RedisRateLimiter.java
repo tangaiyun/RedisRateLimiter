@@ -9,6 +9,12 @@ import org.apache.commons.lang.RandomStringUtils;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
+/**
+ * Redis based Rate limiter
+ * 
+ * @author Aiyun Tang <aiyun.tang@gmail.com>
+ */
+ 
 public class RedisRateLimiter {
 	private JedisPool jedisPool;
 	private TimeUnit timeUnit;
