@@ -17,15 +17,15 @@ import redis.clients.jedis.JedisPool;
 public class TestRedisRateLimiter {
 	private static final MetricRegistry metrics = new MetricRegistry();
 	private static ConsoleReporter reporter = ConsoleReporter.forRegistry(metrics).build();
-	private static final Meter requests = metrics.meter(MetricRegistry.name(TestRedisRateLimiter.class, "request"));
-	private Timer timer = metrics.timer(MetricRegistry.name(TestRedisRateLimiter.class, "response-timer"));
+	private static final Meter requests = metrics.meter(MetricRegistry.name(TestRedisRateLimiter.class, "success"));
+	private Timer timer = metrics.timer(MetricRegistry.name(TestRedisRateLimiter.class, "totalRequest"));
 
 	@Test
 	public void testRedisRateLimit() throws InterruptedException {
-		reporter.start(3, TimeUnit.SECONDS);
+		reporter.start(10, TimeUnit.SECONDS);
 		ApplicationContext ac = new ClassPathXmlApplicationContext("root-context.xml");
 		JedisPool pool = (JedisPool) ac.getBean("jedisPool");
-		RedisRateLimiter limiter = new RedisRateLimiter(pool, TimeUnit.MINUTES, 300);
+		RedisRateLimiter limiter = new RedisRateLimiter(pool, TimeUnit.SECONDS, 30);
 		while (true) {
 			boolean flag = false;
 			Context context = timer.time();

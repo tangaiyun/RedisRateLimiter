@@ -19,16 +19,32 @@ public class RedisRateLimiter {
 	private JedisPool jedisPool;
 	private TimeUnit timeUnit;
 	private int permitsPerUnit;
-	private static final String LuaSecondsScript = " local current; " 
+	private static final String LUA_SECOND_SCRIPT = " local current; "
 			+ " current = redis.call('incr',KEYS[1]); "
-			+ " if tonumber(current) == 1 then " 
-			+ " redis.call('expire',KEYS[1],ARGV[1]) " 
-			+ " end ";
-	private static final String LuaPeriodScript = " local current;"
-			+ " redis.call('zadd',KEYS[1],ARGV[1],ARGV[2]);"
-			+ "current = redis.call('zcount', KEYS[1], '-inf', '+inf');"
 			+ " if tonumber(current) == 1 then "
-			+ " redis.call('expire',KEYS[1],ARGV[3]) "
+			+ " 	redis.call('expire',KEYS[1],ARGV[1]); "
+			+ "     return 1; "
+			+ " else"	
+			+ " 	if tonumber(current) <= tonumber(ARGV[2]) then "
+			+ "     	return 1; "
+			+ "		else "
+			+ "			return -1; "
+			+ "     end "
+			+ " end ";
+	private static final String LUA_PERIOD_SCRIPT =   " local currentSectionCount;"
+			+ " local previosSectionCount;"
+			+ " local totalCountInPeriod;"
+			+ " currentSectionCount = redis.call('zcount', KEYS[2], '-inf', '+inf');"
+			+ " previosSectionCount = redis.call('zcount', KEYS[1], ARGV[3], '+inf');"
+			+ " totalCountInPeriod = tonumber(currentSectionCount)+tonumber(previosSectionCount);"
+			+ " if totalCountInPeriod < tonumber(ARGV[5]) then " 
+			+ " 	redis.call('zadd',KEYS[2],ARGV[1],ARGV[2]);"
+			+ "		if tonumber(currentSectionCount) == 0 then "
+			+ "			redis.call('expire',KEYS[2],ARGV[4]); "
+			+ "		end "
+			+ "     return 1"
+			+ "	else "
+			+ " 	return -1"	 	
 			+ " end ";
 
 	public RedisRateLimiter(JedisPool jedisPool, TimeUnit timeUnit, int permitsPerUnit) {
@@ -57,17 +73,15 @@ public class RedisRateLimiter {
 				jedis = jedisPool.getResource();
 				if (timeUnit == TimeUnit.SECONDS) {
 					String keyName = getKeyName(jedis, keyPrefix);
-					String current = jedis.get(keyName);
-					if ((current != null) && (Integer.parseInt(current) >= permitsPerUnit)) {
-						rtv = false;
-					} else {
+					
 						List<String> keys = new ArrayList<String>();
 						keys.add(keyName);
 						List<String> argvs = new ArrayList<String>();
 						argvs.add(getExpire() + "");
-						jedis.eval(LuaSecondsScript, keys, argvs);
-						rtv = true;
-					}
+						argvs.add(permitsPerUnit + "");
+						Long val = (Long)jedis.eval(LUA_SECOND_SCRIPT, keys, argvs);
+						rtv = (val > 0);
+					
 				} else if (timeUnit == TimeUnit.MINUTES) {
 					rtv = doPeriod(jedis, keyPrefix, 60);
 				} else if (timeUnit == TimeUnit.HOURS) {
@@ -86,27 +100,23 @@ public class RedisRateLimiter {
 	private boolean doPeriod(Jedis jedis, String keyPrefix, int period) {
 		String[] keyNames = getKeyNames(jedis, keyPrefix);
 		//返回2个，第1个是秒计数10位，第2个是微秒6位
-		List<String> jedisTime = jedis.time(); 
-		String currentSecondIndex = jedisTime.get(0);
-		String previousSecondIndex = (Long.parseLong(currentSecondIndex) - period) + "";
-
-		long currentCount = jedis.zcount(keyNames[0], previousSecondIndex, currentSecondIndex)
-				+ jedis.zcount(keyNames[1], previousSecondIndex, currentSecondIndex);
-		
-		if(currentCount >= permitsPerUnit) {
-			return false;
-		}
-		else {
-			List<String> keys = new ArrayList<String>();
-			keys.add(keyNames[1]);
-			List<String> argvs = new ArrayList<String>();
-			argvs.add(currentSecondIndex);
-			//不用UUID是因为UUID是36个字符比较长，下面方法只有20位，而且冲突可能性已很少
-			argvs.add(jedisTime.get(0)+jedisTime.get(1)+RandomStringUtils.randomAlphanumeric(4));
-			argvs.add(getExpire()+"");
-			jedis.eval(LuaPeriodScript, keys, argvs);
-			return true;
-		}
+		List<String> jedisTime = jedis.time();
+		String currentScore = jedisTime.get(0);
+		//不用UUID是因为UUID是36个字符比较长，下面方法只有20位，而且冲突可能性已很少
+		String currentVal = jedisTime.get(0)+jedisTime.get(1)+RandomStringUtils.randomAlphanumeric(4);
+		String previousSectionBeginScore = (Long.parseLong(currentScore) - getPeriodSecond()) + "";
+		String expires = getExpire()+"";
+		List<String> keys = new ArrayList<String>();
+		keys.add(keyNames[0]);
+		keys.add(keyNames[1]);
+		List<String> argvs = new ArrayList<String>();
+		argvs.add(currentScore);
+		argvs.add(currentVal);
+		argvs.add(previousSectionBeginScore);
+		argvs.add(expires);
+		argvs.add(permitsPerUnit+"");
+		Long val = (Long)jedis.eval(LUA_PERIOD_SCRIPT, keys, argvs);
+		return (val > 0);
 	}
 	private String getKeyName(Jedis jedis, String keyPrefix) {
 		String keyName = null;
@@ -161,6 +171,18 @@ public class RedisRateLimiter {
 			throw new java.lang.IllegalArgumentException("Don't support this TimeUnit: " + timeUnit);
 		}
 		return expire;
+	}
+	
+	private int getPeriodSecond() {
+		if (timeUnit == TimeUnit.MINUTES) {
+			return 60;
+		} else if (timeUnit == TimeUnit.HOURS) {
+			return 3600;
+		} else if (timeUnit == TimeUnit.DAYS) {
+			return 24*3600;
+		} else {
+			throw new java.lang.IllegalArgumentException("Don't support this TimeUnit: " + timeUnit);
+		}
 	}
 
 }
