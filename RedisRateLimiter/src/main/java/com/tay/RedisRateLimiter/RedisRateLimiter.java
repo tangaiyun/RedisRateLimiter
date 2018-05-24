@@ -72,7 +72,7 @@ public class RedisRateLimiter {
 			try {
 				jedis = jedisPool.getResource();
 				if (timeUnit == TimeUnit.SECONDS) {
-					String keyName = getKeyName(jedis, keyPrefix);
+					String keyName = getKeyNameForSecond(jedis, keyPrefix);
 					
 						List<String> keys = new ArrayList<String>();
 						keys.add(keyName);
@@ -101,16 +101,17 @@ public class RedisRateLimiter {
 		String[] keyNames = getKeyNames(jedis, keyPrefix);
 		//返回2个，第1个是秒计数10位，第2个是微秒6位
 		List<String> jedisTime = jedis.time();
-		String currentScore = jedisTime.get(0);
+		long currentMicroSecond = Long.parseLong(jedisTime.get(0))* 1000000 + Long.parseLong(jedisTime.get(1));
+		
 		//不用UUID是因为UUID是36个字符比较长，下面方法只有20位，而且冲突可能性已很少
 		String currentVal = jedisTime.get(0)+jedisTime.get(1)+RandomStringUtils.randomAlphanumeric(4);
-		String previousSectionBeginScore = (Long.parseLong(currentScore) - getPeriodSecond()) + "";
+		String previousSectionBeginScore = (currentMicroSecond - getPeriodMicrosecond()) + "";
 		String expires = getExpire()+"";
 		List<String> keys = new ArrayList<String>();
 		keys.add(keyNames[0]);
 		keys.add(keyNames[1]);
 		List<String> argvs = new ArrayList<String>();
-		argvs.add(currentScore);
+		argvs.add(currentMicroSecond+"");
 		argvs.add(currentVal);
 		argvs.add(previousSectionBeginScore);
 		argvs.add(expires);
@@ -118,19 +119,8 @@ public class RedisRateLimiter {
 		Long val = (Long)jedis.eval(LUA_PERIOD_SCRIPT, keys, argvs);
 		return (val > 0);
 	}
-	private String getKeyName(Jedis jedis, String keyPrefix) {
-		String keyName = null;
-		if (timeUnit == TimeUnit.SECONDS) {
-			keyName = keyPrefix + ":" + jedis.time().get(0);
-		} else if (timeUnit == TimeUnit.MINUTES) {
-			keyName = keyPrefix + ":" + Long.parseLong(jedis.time().get(0)) / 60;
-		} else if (timeUnit == TimeUnit.HOURS) {
-			keyName = keyPrefix + ":" + Long.parseLong(jedis.time().get(0)) / 3600;
-		} else if (timeUnit == TimeUnit.DAYS) {
-			keyName = keyPrefix + ":" + Long.parseLong(jedis.time().get(0)) / (3600 * 24);
-		} else {
-			throw new java.lang.IllegalArgumentException("Don't support this TimeUnit: " + timeUnit);
-		}
+	private String getKeyNameForSecond(Jedis jedis, String keyPrefix) {
+		String keyName  = keyPrefix + ":" + jedis.time().get(0);
 		return keyName;
 	}
 
@@ -173,13 +163,13 @@ public class RedisRateLimiter {
 		return expire;
 	}
 	
-	private int getPeriodSecond() {
+	private int getPeriodMicrosecond() {
 		if (timeUnit == TimeUnit.MINUTES) {
-			return 60;
+			return 60 * 1000000;
 		} else if (timeUnit == TimeUnit.HOURS) {
-			return 3600;
+			return 3600 * 1000000;
 		} else if (timeUnit == TimeUnit.DAYS) {
-			return 24*3600;
+			return 24 * 3600 * 1000000;
 		} else {
 			throw new java.lang.IllegalArgumentException("Don't support this TimeUnit: " + timeUnit);
 		}
