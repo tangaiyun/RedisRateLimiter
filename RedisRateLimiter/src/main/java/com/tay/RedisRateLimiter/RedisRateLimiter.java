@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang.RandomStringUtils;
-
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
@@ -99,31 +97,39 @@ public class RedisRateLimiter {
 	}
 	private boolean doPeriod(Jedis jedis, String keyPrefix, int period) {
 		String[] keyNames = getKeyNames(jedis, keyPrefix);
-		//返回2个，第1个是秒计数10位，第2个是微秒6位
-		List<String> jedisTime = jedis.time();
-		long currentMicroSecond = Long.parseLong(jedisTime.get(0))* 1000000 + Long.parseLong(jedisTime.get(1));
-		
-		//不用UUID是因为UUID是36个字符比较长，下面方法只有20位，而且冲突可能性已很少
-		String currentVal = jedisTime.get(0)+jedisTime.get(1)+RandomStringUtils.randomAlphanumeric(4);
-		String previousSectionBeginScore = (currentMicroSecond - getPeriodMicrosecond()) + "";
-		String expires = getExpire()+"";
+		long currentTimeInMicroSecond = getRedisTime(jedis);
+		String previousSectionBeginScore = String.valueOf((currentTimeInMicroSecond - getPeriodMicrosecond()));
+		String expires =String.valueOf(getExpire());
+		String currentTimeInMicroSecondStr = String.valueOf(currentTimeInMicroSecond);
 		List<String> keys = new ArrayList<String>();
 		keys.add(keyNames[0]);
 		keys.add(keyNames[1]);
 		List<String> argvs = new ArrayList<String>();
-		argvs.add(currentMicroSecond+"");
-		argvs.add(currentVal);
+		argvs.add(currentTimeInMicroSecondStr);
+		argvs.add(currentTimeInMicroSecondStr);
 		argvs.add(previousSectionBeginScore);
 		argvs.add(expires);
-		argvs.add(permitsPerUnit+"");
+		argvs.add(String.valueOf(permitsPerUnit));
 		Long val = (Long)jedis.eval(LUA_PERIOD_SCRIPT, keys, argvs);
 		return (val > 0);
 	}
+	
+	/**
+	 *  因为redis访问实际上是单线程的，而且jedis.time()方法返回的时间精度为微秒级，每一个jedis.time()调用耗时应该会超过1微秒，因此我们可以认为每次jedis.time()返回的时间都是唯一且递增的
+	 */
+	private long getRedisTime(Jedis jedis) {
+		List<String> jedisTime = jedis.time();
+		Long currentSecond = Long.parseLong(jedisTime.get(0));
+		Long microSecondsElapseInCurrentSecond = Long.parseLong(jedisTime.get(1));
+		Long currentTimeInMicroSecond = currentSecond * 1000000 + microSecondsElapseInCurrentSecond;
+		return currentTimeInMicroSecond;
+	}
+	
 	private String getKeyNameForSecond(Jedis jedis, String keyPrefix) {
 		String keyName  = keyPrefix + ":" + jedis.time().get(0);
 		return keyName;
 	}
-
+	
 	private String[] getKeyNames(Jedis jedis, String keyPrefix) {
 		String[] keyNames = null;
 		if (timeUnit == TimeUnit.MINUTES) {
