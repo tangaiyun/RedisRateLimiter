@@ -44,6 +44,15 @@ public class RedisRateLimiter {
 			+ "	else "
 			+ " 	return -1"	 	
 			+ " end ";
+	
+	private static final int PERIOD_SECOND_TTL = 10;
+	private static final int PERIOD_MINUTE_TTL = 2 * 60 + 10;
+	private static final int PERIOD_HOUR_TTL = 2 * 3600 + 10;
+	private static final int PERIOD_DAY_TTL = 2 * 3600 * 24 + 10;
+	
+	private static final int MICROSECONDS_IN_MINUTE = 60 * 1000000;
+	private static final int MICROSECONDS_IN_HOUR = 3600 * 1000000;
+	private static final int MICROSECONDS_IN_DAY = 24 * 3600 * 1000000;
 
 	public RedisRateLimiter(JedisPool jedisPool, TimeUnit timeUnit, int permitsPerUnit) {
 		this.jedisPool = jedisPool;
@@ -81,11 +90,11 @@ public class RedisRateLimiter {
 						rtv = (val > 0);
 					
 				} else if (timeUnit == TimeUnit.MINUTES) {
-					rtv = doPeriod(jedis, keyPrefix, 60);
+					rtv = doPeriod(jedis, keyPrefix);
 				} else if (timeUnit == TimeUnit.HOURS) {
-					rtv = doPeriod(jedis, keyPrefix, 3600);
+					rtv = doPeriod(jedis, keyPrefix);
 				} else if (timeUnit == TimeUnit.DAYS) {
-					rtv = doPeriod(jedis, keyPrefix, 3600*24);
+					rtv = doPeriod(jedis, keyPrefix);
 				}
 			} finally {
 				if (jedis != null) {
@@ -95,7 +104,7 @@ public class RedisRateLimiter {
 		}
 		return rtv;
 	}
-	private boolean doPeriod(Jedis jedis, String keyPrefix, int period) {
+	private boolean doPeriod(Jedis jedis, String keyPrefix) {
 		String[] keyNames = getKeyNames(jedis, keyPrefix);
 		long currentTimeInMicroSecond = getRedisTime(jedis);
 		String previousSectionBeginScore = String.valueOf((currentTimeInMicroSecond - getPeriodMicrosecond()));
@@ -156,13 +165,13 @@ public class RedisRateLimiter {
 	private int getExpire() {
 		int expire = 0;
 		if (timeUnit == TimeUnit.SECONDS) {
-			expire = 10;
+			expire = PERIOD_SECOND_TTL;
 		} else if (timeUnit == TimeUnit.MINUTES) {
-			expire = 2 * 60 + 10;
+			expire = PERIOD_MINUTE_TTL;
 		} else if (timeUnit == TimeUnit.HOURS) {
-			expire = 2 * 3600 + 10;
+			expire = PERIOD_HOUR_TTL;
 		} else if (timeUnit == TimeUnit.DAYS) {
-			expire = 2 * 3600 * 24 + 10;
+			expire = PERIOD_DAY_TTL;
 		} else {
 			throw new java.lang.IllegalArgumentException("Don't support this TimeUnit: " + timeUnit);
 		}
@@ -171,11 +180,11 @@ public class RedisRateLimiter {
 	
 	private int getPeriodMicrosecond() {
 		if (timeUnit == TimeUnit.MINUTES) {
-			return 60 * 1000000;
+			return MICROSECONDS_IN_MINUTE;
 		} else if (timeUnit == TimeUnit.HOURS) {
-			return 3600 * 1000000;
+			return MICROSECONDS_IN_HOUR;
 		} else if (timeUnit == TimeUnit.DAYS) {
-			return 24 * 3600 * 1000000;
+			return MICROSECONDS_IN_DAY;
 		} else {
 			throw new java.lang.IllegalArgumentException("Don't support this TimeUnit: " + timeUnit);
 		}
