@@ -84,8 +84,8 @@ public class RedisRateLimiter {
 						List<String> keys = new ArrayList<String>();
 						keys.add(keyName);
 						List<String> argvs = new ArrayList<String>();
-						argvs.add(getExpire() + "");
-						argvs.add(permitsPerUnit + "");
+						argvs.add(String.valueOf(getExpire()));
+						argvs.add(String.valueOf(permitsPerUnit));
 						Long val = (Long)jedis.eval(LUA_SECOND_SCRIPT, keys, argvs);
 						rtv = (val > 0);
 					
