@@ -1,6 +1,6 @@
 # RedisRateLimiter
 
-Redis Based Rate limiter
+Redis Based Rate limiter （slide window mode）
 
 support control level: Seconds, Minutes,  Hours,  Days
 
