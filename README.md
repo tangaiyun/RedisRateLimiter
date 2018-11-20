@@ -12,3 +12,7 @@ please set the configuration of redis, change the content of redis.properties as
 detail api usage:
 
 please refer to: https://github.com/tangaiyun/RedisRateLimiter/blob/master/RedisRateLimiter/src/test/java/com/tay/RedisRateLimiter/TestRedisRateLimiter.java
+
+for integration with Spring boot, please refer to the project:
+
+https://github.com/tangaiyun/spring-cloud-microservice-ratelimiter
