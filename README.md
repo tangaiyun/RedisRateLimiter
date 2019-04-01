@@ -15,4 +15,4 @@ please refer to: https://github.com/tangaiyun/RedisRateLimiter/blob/master/Redis
 
 for integration with Spring boot, please refer to the project:
 
-https://github.com/tangaiyun/spring-cloud-microservice-ratelimiter
+https://github.com/tangaiyun/redislimiter-spring-boot
