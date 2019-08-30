@@ -124,9 +124,9 @@ public class RedisRateLimiter {
 	 */
 	private long getRedisTime(Jedis jedis) {
 		List<String> jedisTime = jedis.time();
-		Long currentSecond = Long.parseLong(jedisTime.get(0));
-		Long microSecondsElapseInCurrentSecond = Long.parseLong(jedisTime.get(1));
-		Long currentTimeInMicroSecond = currentSecond * 1000000 + microSecondsElapseInCurrentSecond;
+		long currentSecond = Long.parseLong(jedisTime.get(0));
+		long microSecondsElapseInCurrentSecond = Long.parseLong(jedisTime.get(1));
+		long currentTimeInMicroSecond = currentSecond * 1000000 + microSecondsElapseInCurrentSecond;
 		return currentTimeInMicroSecond;
 	}
 	
