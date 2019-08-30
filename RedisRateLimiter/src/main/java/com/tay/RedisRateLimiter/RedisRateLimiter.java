@@ -50,9 +50,9 @@ public class RedisRateLimiter {
 	private static final int PERIOD_HOUR_TTL = 2 * 3600 + 10;
 	private static final int PERIOD_DAY_TTL = 2 * 3600 * 24 + 10;
 	
-	private static final int MICROSECONDS_IN_MINUTE = 60 * 1000000;
-	private static final int MICROSECONDS_IN_HOUR = 3600 * 1000000;
-	private static final int MICROSECONDS_IN_DAY = 24 * 3600 * 1000000;
+	private static final int MICROSECONDS_IN_MINUTE = 60 * 1000000L;
+	private static final int MICROSECONDS_IN_HOUR = 3600 * 1000000L;
+	private static final int MICROSECONDS_IN_DAY = 24 * 3600 * 1000000L;
 
 	public RedisRateLimiter(JedisPool jedisPool, TimeUnit timeUnit, int permitsPerUnit) {
 		this.jedisPool = jedisPool;
