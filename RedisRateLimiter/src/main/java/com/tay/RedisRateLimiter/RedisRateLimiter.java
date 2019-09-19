@@ -9,10 +9,10 @@ import redis.clients.jedis.JedisPool;
 
 /**
  * Redis based Rate limiter
- * 
+ *
  * @author Aiyun Tang <aiyun.tang@gmail.com>
  */
- 
+
 public class RedisRateLimiter {
 	private JedisPool jedisPool;
 	private TimeUnit timeUnit;
@@ -22,7 +22,7 @@ public class RedisRateLimiter {
 			+ " if tonumber(current) == 1 then "
 			+ " 	redis.call('expire',KEYS[1],ARGV[1]); "
 			+ "     return 1; "
-			+ " else"	
+			+ " else"
 			+ " 	if tonumber(current) <= tonumber(ARGV[2]) then "
 			+ "     	return 1; "
 			+ "		else "
@@ -35,21 +35,21 @@ public class RedisRateLimiter {
 			+ " currentSectionCount = redis.call('zcount', KEYS[2], '-inf', '+inf');"
 			+ " previosSectionCount = redis.call('zcount', KEYS[1], ARGV[3], '+inf');"
 			+ " totalCountInPeriod = tonumber(currentSectionCount)+tonumber(previosSectionCount);"
-			+ " if totalCountInPeriod < tonumber(ARGV[5]) then " 
+			+ " if totalCountInPeriod < tonumber(ARGV[5]) then "
 			+ " 	redis.call('zadd',KEYS[2],ARGV[1],ARGV[2]);"
 			+ "		if tonumber(currentSectionCount) == 0 then "
 			+ "			redis.call('expire',KEYS[2],ARGV[4]); "
 			+ "		end "
 			+ "     return 1"
 			+ "	else "
-			+ " 	return -1"	 	
+			+ " 	return -1"
 			+ " end ";
-	
+
 	private static final int PERIOD_SECOND_TTL = 10;
 	private static final int PERIOD_MINUTE_TTL = 2 * 60 + 10;
 	private static final int PERIOD_HOUR_TTL = 2 * 3600 + 10;
 	private static final int PERIOD_DAY_TTL = 2 * 3600 * 24 + 10;
-	
+
 	private static final long MICROSECONDS_IN_MINUTE = 60 * 1000000L;
 	private static final long MICROSECONDS_IN_HOUR = 3600 * 1000000L;
 	private static final long MICROSECONDS_IN_DAY = 24 * 3600 * 1000000L;
@@ -80,18 +80,18 @@ public class RedisRateLimiter {
 				jedis = jedisPool.getResource();
 				if (timeUnit == TimeUnit.SECONDS) {
 					String keyName = getKeyNameForSecond(jedis, keyPrefix);
-					
-						List<String> keys = new ArrayList<String>();
-						keys.add(keyName);
-						List<String> argvs = new ArrayList<String>();
-						argvs.add(String.valueOf(getExpire()));
-						argvs.add(String.valueOf(permitsPerUnit));
-						Long val = (Long)jedis.eval(LUA_SECOND_SCRIPT, keys, argvs);
-						rtv = (val > 0);
-					
+
+					List<String> keys = new ArrayList<String>();
+					keys.add(keyName);
+					List<String> argvs = new ArrayList<String>();
+					argvs.add(String.valueOf(getExpire()));
+					argvs.add(String.valueOf(permitsPerUnit));
+					Long val = (Long)jedis.eval(LUA_SECOND_SCRIPT, keys, argvs);
+					rtv = (val > 0);
+
 				} else if (timeUnit == TimeUnit.MINUTES || timeUnit == TimeUnit.HOURS || timeUnit == TimeUnit.DAYS) {
 					rtv = doPeriod(jedis, keyPrefix);
-				} 
+				}
 			} finally {
 				if (jedis != null) {
 					jedis.close();
@@ -101,8 +101,13 @@ public class RedisRateLimiter {
 		return rtv;
 	}
 	private boolean doPeriod(Jedis jedis, String keyPrefix) {
-		String[] keyNames = getKeyNames(jedis, keyPrefix);
-		long currentTimeInMicroSecond = getRedisTime(jedis);
+		List<String> jedisTime = jedis.time();
+		long currentSecond = Long.parseLong(jedisTime.get(0));
+		long microSecondsElapseInCurrentSecond = Long.parseLong(jedisTime.get(1));
+		String[] keyNames = getKeyNames(currentSecond, keyPrefix);
+		//因为redis访问实际上是单线程的，而且jedis.time()方法返回的时间精度为微秒级，每一个jedis.time()调用耗时应该会超过1微秒，因此我们可以认为每次jedis.time()返回的时间都是唯一且递增
+		//因此这个currentTimeInMicroSecond在多线程情况下不会存在相同
+		long currentTimeInMicroSecond = currentSecond * 1000000 + microSecondsElapseInCurrentSecond;
 		String previousSectionBeginScore = String.valueOf((currentTimeInMicroSecond - getPeriodMicrosecond()));
 		String expires =String.valueOf(getExpire());
 		String currentTimeInMicroSecondStr = String.valueOf(currentTimeInMicroSecond);
@@ -118,37 +123,34 @@ public class RedisRateLimiter {
 		Long val = (Long)jedis.eval(LUA_PERIOD_SCRIPT, keys, argvs);
 		return (val > 0);
 	}
-	
-	/**
-	 *  因为redis访问实际上是单线程的，而且jedis.time()方法返回的时间精度为微秒级，每一个jedis.time()调用耗时应该会超过1微秒，因此我们可以认为每次jedis.time()返回的时间都是唯一且递增的
-	 */
-	private long getRedisTime(Jedis jedis) {
-		List<String> jedisTime = jedis.time();
-		long currentSecond = Long.parseLong(jedisTime.get(0));
-		long microSecondsElapseInCurrentSecond = Long.parseLong(jedisTime.get(1));
-		long currentTimeInMicroSecond = currentSecond * 1000000 + microSecondsElapseInCurrentSecond;
-		return currentTimeInMicroSecond;
-	}
-	
+
+
+//	private long getRedisTime(Jedis jedis) {
+//		List<String> jedisTime = jedis.time();
+//		long currentSecond = Long.parseLong(jedisTime.get(0));
+//		long microSecondsElapseInCurrentSecond = Long.parseLong(jedisTime.get(1));
+//		long currentTimeInMicroSecond = currentSecond * 1000000 + microSecondsElapseInCurrentSecond;
+//		return currentTimeInMicroSecond;
+//	}
+
 	private String getKeyNameForSecond(Jedis jedis, String keyPrefix) {
-		String keyName  = keyPrefix + ":" + jedis.time().get(0);
-		return keyName;
+		return keyPrefix + ":" + jedis.time().get(0);
 	}
-	
-	private String[] getKeyNames(Jedis jedis, String keyPrefix) {
+
+	private String[] getKeyNames(long currentSecond, String keyPrefix) {
 		String[] keyNames = null;
 		if (timeUnit == TimeUnit.MINUTES) {
-			long index = Long.parseLong(jedis.time().get(0)) / 60;
+			long index = currentSecond / 60;
 			String keyName1 = keyPrefix + ":" + (index - 1);
 			String keyName2 = keyPrefix + ":" + index;
 			keyNames = new String[] { keyName1, keyName2 };
 		} else if (timeUnit == TimeUnit.HOURS) {
-			long index = Long.parseLong(jedis.time().get(0)) / 3600;
+			long index = currentSecond / 3600;
 			String keyName1 = keyPrefix + ":" + (index - 1);
 			String keyName2 = keyPrefix + ":" + index;
 			keyNames = new String[] { keyName1, keyName2 };
 		} else if (timeUnit == TimeUnit.DAYS) {
-			long index = Long.parseLong(jedis.time().get(0)) / (3600 * 24);
+			long index = currentSecond / (3600 * 24);
 			String keyName1 = keyPrefix + ":" + (index - 1);
 			String keyName2 = keyPrefix + ":" + index;
 			keyNames = new String[] { keyName1, keyName2 };
@@ -173,7 +175,7 @@ public class RedisRateLimiter {
 		}
 		return expire;
 	}
-	
+
 	private long getPeriodMicrosecond() {
 		if (timeUnit == TimeUnit.MINUTES) {
 			return MICROSECONDS_IN_MINUTE;
